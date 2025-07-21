@@ -1,46 +1,58 @@
 import streamlit as st
-from streamlit_chat import message
-import joblib
 import pandas as pd
+import numpy as np
+import joblib
 
-# 모델 불러오기
-model = joblib.load("water_model.pkl")  # 같은 폴더에 있어야 함
+# 모델 및 컬럼 불러오기
+@st.cache_resource
+def load_model():
+    # 이미 학습된 모델 로드 (직접 저장한 pkl 파일 경로 사용)
+    model = joblib.load("rf_model.pkl")
+    feature_names = ['ph', 'Hardness', 'Solids', 'Chloramines', 'Sulfate', 'Conductivity', 'Organic_carbon', 'Trihalomethanes', 'Turbidity']
+    return model, feature_names
 
-st.set_page_config(page_title="Water Quality Chatbot")
-st.title("💧 수질 예측 챗봇")
+model, feature_names = load_model()
 
-# 이전 메시지 저장
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+st.title("💧 마실 수 있는 물인가요? 설문을 통해 확인해보세요!")
+st.markdown("물의 상태에 대해 몇 가지 질문에 답하면 AI가 마실 수 있는 물인지 예측해드립니다.")
 
-# 사용자 입력을 간단한 수치로 변환하는 함수
-def parse_input(text):
-    ph, bod, turbidity = 7.0, 3.0, 3.0
-    if "시큼" in text or "신맛" in text:
-        ph = 5.8
-    if "비누" in text or "알칼리" in text:
-        ph = 8.3
-    if "썩" in text or "냄새" in text:
-        bod = 6.0
-    if "탁" in text or "흐림" in text:
-        turbidity = 7.0
-    return pd.DataFrame([{"ph": ph, "bod": bod, "turbidity": turbidity}])
+# 설문지 기반 입력
+ph_q = st.radio("1. 물에 거품이 많이 생기나요?", ["O", "X"])
+rust_q = st.radio("2. 물이 녹슨 쇠처럼 붉거나 갈색인가요?", ["O", "X"])
+solids_q = st.slider("3. 물에 이물질이 보이나요? (탁한 정도)", 0, 50000, 15000)
+chlorine_q = st.radio("4. 소독약(염소) 냄새가 많이 나나요?", ["O", "X"])
+metallic_q = st.radio("5. 금속 맛이 느껴지나요?", ["O", "X"])
+smell_q = st.radio("6. 냄새가 나나요?", ["O", "X"])
+trihalo_q = st.radio("7. 오래된 정수기처럼 오래된 물 맛이 나나요?", ["O", "X"])
 
-# 채팅 입력창
-user_input = st.chat_input("물 상태를 설명해주세요 (예: '물이 탁하고 냄새가 나요')")
+# 특성 매핑
+def map_answers():
+    ph = 5.0 if ph_q == "O" else 7.0  # 거품 → pH 낮거나 높음
+    hardness = 180 if rust_q == "O" else 120  # 붉은색 물 → 경도 증가
+    solids = solids_q
+    chloramines = 9.0 if chlorine_q == "O" else 4.0
+    sulfate = 320.0 if metallic_q == "O" else 250.0
+    conductivity = 500.0 if smell_q == "O" else 350.0
+    organic_carbon = 15.0 if smell_q == "O" else 9.0
+    trihalomethanes = 100.0 if trihalo_q == "O" else 50.0
+    turbidity = 6.0 if solids_q > 30000 else 3.0
 
-if user_input:
-    st.session_state.messages.append(("user", user_input))
+    return pd.DataFrame([[
+        ph, hardness, solids, chloramines, sulfate,
+        conductivity, organic_carbon, trihalomethanes, turbidity
+    ]], columns=feature_names)
 
-    # 입력을 모델용 데이터로 변환
-    df = parse_input(user_input)
+if st.button("예측하기"):
+    input_data = map_answers()
+    prediction = model.predict(input_data)[0]
 
-    # 모델 예측
-    prediction = model.predict(df)[0]
-    result = "이 물은 마실 수 있어요." if prediction == 1 else "이 물은 마시면 안 돼요."
+    if prediction == 1:
+        st.success("✅ 이 물은 **마셔도 괜찮습니다!**")
+    else:
+        st.error("🚫 이 물은 **마시지 않는 것이 좋습니다!**")
 
-    st.session_state.messages.append(("bot", result))
+    st.markdown("📊 입력된 값:")
+    st.dataframe(input_data)
 
-# 이전 대화 표시
-for sender, msg in st.session_state.messages:
-    message(msg, is_user=(sender == "user"))
+st.markdown("---")
+st.markdown("🔗 [gptonline.ai/ko](https://gptonline.ai/ko/)에서 더 많은 AI 앱을 만나보세요!")
