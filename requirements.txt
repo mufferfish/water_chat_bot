@@ -1,4 +1,5 @@
 streamlit
-streamlit-chat
-joblib
 pandas
+numpy
+scikit-learn
+joblib
